@@ -377,18 +377,25 @@ void initialize() {
     //  initialize positions
     for (i=0; i<n; i++) {
         for (j=0; j<n; j++) {
-            for (k=0; k<n; k++) {
-                if (p<N) {
+            for (k=0; k<n; k++){
                     
                     r[p][0] = (i + 0.5)*pos;
                     r[p][1] = (j + 0.5)*pos;
                     r[p][2] = (k + 0.5)*pos;
-                }
                 p++;
+            if (p >= N) {
+                    break;
+                }
+            }
+            if (p >= N) {
+                break;
             }
         }
+        if (p >= N) {
+            break;
+        }
     }
-    
+   
     // Call function to initialize velocities
     initializeVelocities();
     
@@ -417,12 +424,23 @@ double MeanSquaredVelocity() {
     double vy2 = 0;
     double vz2 = 0;
     double v2;
+    //Adicionado variáveis auxiliares, melhor localidade??
+    double vx,vy,vz;
     
     for (int i=0; i<N; i++) {
+    	//EDITED
+    	vx=v[i][0];
+    	vy=v[i][1];
+    	vz=v[i][2];
+
         
-        vx2 = vx2 + v[i][0]*v[i][0];
-        vy2 = vy2 + v[i][1]*v[i][1];
-        vz2 = vz2 + v[i][2]*v[i][2];
+        vx2 += vx*vx;
+        vy2 += vy*vy;
+        vz2 += vz*vz;
+        //ORIGINAL
+        //vx2 = vx2 + v[i][0]*v[i][0];
+        //vy2 = vy2 + v[i][1]*v[i][1];
+        //vz2 = vz2 + v[i][2]*v[i][2];
         
     }
     v2 = (vx2+vy2+vz2)/N;
@@ -436,6 +454,7 @@ double MeanSquaredVelocity() {
 double Kinetic() { //Write Function here!  
     
     double v2, kin;
+    double mfor2= m/2.0;
     
     kin =0.;
     for (int i=0; i<N; i++) {
@@ -446,7 +465,10 @@ double Kinetic() { //Write Function here!
             v2 += v[i][j]*v[i][j];
             
         }
-        kin += m*v2/2.;
+        //ORIGINAL
+        // kin += m*v2/2.;
+        //EDITED
+        kin += mfor2 *v2;
         
     }
     
@@ -457,18 +479,20 @@ double Kinetic() { //Write Function here!
 
 
 // Function to calculate the potential energy of the system
+//EDITED (fors editados e a forma como o r2 e 
+//calulado tambem, adicionado variavel auxiliar)
 double Potential() {
-    double quot, r2, rnorm, term1, term2, Pot;
+    double quot, r2, rnorm, term1, term2, Pot, subs;
     int i, j, k;
     
     Pot=0.;
     for (i=0; i<N; i++) {
-        for (j=0; j<N; j++) {
-            
-            if (j!=i) {
+        for (j=i+1; j<N; j++) {
                 r2=0.;
                 for (k=0; k<3; k++) {
-                    r2 += (r[i][k]-r[j][k])*(r[i][k]-r[j][k]);
+                	subs = r[i][k]-r[j][k];
+
+                    r2 += subs*subs;
                 }
                 rnorm=sqrt(r2);
                 quot=sigma/rnorm;
@@ -479,7 +503,7 @@ double Potential() {
                 
             }
         }
-    }
+    
     
     return Pot;
 }
