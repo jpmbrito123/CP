@@ -375,24 +375,17 @@ void initialize() {
     //  index for number of particles assigned positions
     p = 0;
     //  initialize positions
-    for (i=0; i<n; i++) {
+      for (i=0; i<n; i++) {
         for (j=0; j<n; j++) {
-            for (k=0; k<n; k++){
+            for (k=0; k<n; k++) {
+                if (p<N) {
                     
                     r[p][0] = (i + 0.5)*pos;
                     r[p][1] = (j + 0.5)*pos;
                     r[p][2] = (k + 0.5)*pos;
-                p++;
-            if (p >= N) {
-                    break;
                 }
+                p++;
             }
-            if (p >= N) {
-                break;
-            }
-        }
-        if (p >= N) {
-            break;
         }
     }
    
@@ -424,23 +417,13 @@ double MeanSquaredVelocity() {
     double vy2 = 0;
     double vz2 = 0;
     double v2;
-    //Adicionado variáveis auxiliares, melhor localidade??
-    double vx,vy,vz;
+
     
     for (int i=0; i<N; i++) {
-    	//EDITED
-    	vx=v[i][0];
-    	vy=v[i][1];
-    	vz=v[i][2];
-
-        
-        vx2 += vx*vx;
-        vy2 += vy*vy;
-        vz2 += vz*vz;
-        //ORIGINAL
-        //vx2 = vx2 + v[i][0]*v[i][0];
-        //vy2 = vy2 + v[i][1]*v[i][1];
-        //vz2 = vz2 + v[i][2]*v[i][2];
+    	
+        vx2 = vx2 + v[i][0]*v[i][0];
+        vy2 = vy2 + v[i][1]*v[i][1];
+        vz2 = vz2 + v[i][2]*v[i][2];
         
     }
     v2 = (vx2+vy2+vz2)/N;
@@ -454,7 +437,7 @@ double MeanSquaredVelocity() {
 double Kinetic() { //Write Function here!  
     
     double v2, kin;
-    double mfor2= m/2.0;
+
     
     kin =0.;
     for (int i=0; i<N; i++) {
@@ -468,7 +451,7 @@ double Kinetic() { //Write Function here!
         //ORIGINAL
         // kin += m*v2/2.;
         //EDITED
-        kin += mfor2 *v2;
+        kin += m*v2/2;
         
     }
     
@@ -484,10 +467,11 @@ double Kinetic() { //Write Function here!
 double Potential() {
     double quot, r2, rnorm, term1, term2, Pot, subs;
     int i, j, k;
-    
+    double fourxepsilon = 4. * epsilon;
     Pot=0.;
     for (i=0; i<N; i++) {
-        for (j=i+1; j<N; j++) {
+        for (j=0; j<N; j++) {
+        	if(j!=i){
                 r2=0.;
                 for (k=0; k<3; k++) {
                 	subs = r[i][k]-r[j][k];
@@ -496,11 +480,11 @@ double Potential() {
                 }
                 rnorm=sqrt(r2);
                 quot=sigma/rnorm;
-                term1 = pow(quot,12.);
-                term2 = pow(quot,6.);
-                
-                Pot += 4*epsilon*(term1 - term2);
-                
+                term2 = quot * quot * quot * quot * quot * quot;
+                term1 = term2 * term2;
+
+                Pot += fourxepsilon*(term1 - term2);
+                }
             }
         }
     
@@ -517,7 +501,7 @@ void computeAccelerations() {
     int i, j, k;
     double f, rSqd;
     double rij[3]; // position of i relative to j
-    
+    double rsqd4,rsqd7;
     
     for (i = 0; i < N; i++) {  // set all accelerations to zero
         for (k = 0; k < 3; k++) {
@@ -535,9 +519,11 @@ void computeAccelerations() {
                 //  sum of squares of the components
                 rSqd += rij[k] * rij[k];
             }
-            
+            rsqd4= rSqd*rSqd*rSqd*rSqd;
+            rsqd7= rsqd4*rSqd*rSqd*rSqd;
             //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
-            f = 24 * (2 * pow(rSqd, -7) - pow(rSqd, -4));
+            f = 24 * (2/ rsqd7 - 1/ rsqd4);
+            //f = 24 * (2 * pow(rSqd, -7) - pow(rSqd, -4));
             for (k = 0; k < 3; k++) {
                 //  from F = ma, where m = 1 in natural units!
                 a[i][k] += rij[k] * f;
