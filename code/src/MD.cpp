@@ -465,30 +465,29 @@ double Kinetic() { //Write Function here!
 //EDITED (fors editados e a forma como o r2 e 
 //calulado tambem, adicionado variavel auxiliar)
 double Potential() {
-    double quot, r2, rnorm, term1, term2, Pot, subs;
+    double quot, r2, term1, term2, Pot, subs1, subs2, subs3;
     int i, j, k;
     double fourxepsilon = 4. * epsilon;
-    Pot=0.;
-    for (i=0; i<N; i++) {
-        for (j=0; j<N; j++) {
-        	if(j!=i){
-                r2=0.;
-                for (k=0; k<3; k++) {
-                	subs = r[i][k]-r[j][k];
-
-                    r2 += subs*subs;
-                }
-                rnorm=sqrt(r2);
-                quot=sigma/rnorm;
-                term2 = quot * quot * quot * quot * quot * quot;
+    Pot = 0.;
+    for (i = 0; i < N; i++) {
+        for (j = 0; j < N; j++) {
+            if (j != i) {
+                r2 = 0.;
+                //r2 = ((r[i][0] - r[j][0]) * (r[i][0] - r[j][0]) + (r[i][1] - r[j][1]) * (r[i][1] - r[j][1]) + (r[i][2] - r[j][2]) * (r[i][2] - r[j][2]));
+                subs1 = r[i][0] - r[j][0];
+                subs2 = r[i][1] - r[j][1];
+                subs3 = r[i][2] - r[j][2];
+                r2 = subs1 * subs1 + subs2 * subs2 + subs3 * subs3;
+                quot = sigma / r2;
+                term2 = quot * quot * quot;
                 term1 = term2 * term2;
 
-                Pot += fourxepsilon*(term1 - term2);
-                }
+                Pot += fourxepsilon * (term1 - term2);
             }
         }
-    
-    
+    }
+
+
     return Pot;
 }
 
@@ -501,37 +500,46 @@ void computeAccelerations() {
     int i, j, k;
     double f, rSqd;
     double rij[3]; // position of i relative to j
-    double rsqd4,rsqd7;
-    
+    //double rsqd4,rsqd7;
+    double rsqdinv, rsqd3;
+
     for (i = 0; i < N; i++) {  // set all accelerations to zero
-        for (k = 0; k < 3; k++) {
-            a[i][k] = 0;
-        }
+        a[0][0] = 0;
+        a[1][1] = 0;
+        a[2][2] = 0;
     }
-    for (i = 0; i < N-1; i++) {   // loop over all distinct pairs i,j
-        for (j = i+1; j < N; j++) {
+    for (i = 0; i < N - 1; i++) {   // loop over all distinct pairs i,j
+        for (j = i + 1; j < N; j++) {
             // initialize r^2 to zero
             rSqd = 0;
-            
-            for (k = 0; k < 3; k++) {
-                //  component-by-componenent position of i relative to j
-                rij[k] = r[i][k] - r[j][k];
-                //  sum of squares of the components
-                rSqd += rij[k] * rij[k];
-            }
-            rsqd4= rSqd*rSqd*rSqd*rSqd;
-            rsqd7= rsqd4*rSqd*rSqd*rSqd;
+
+
+            //  component-by-componenent position of i relative to j
+            rij[0] = r[i][0] - r[j][0];
+            rij[1] = r[i][1] - r[j][1];
+            rij[2] = r[i][2] - r[j][2];
+            //  sum of squares of the components
+            rSqd = rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
+
+            rsqdinv = 1 / rSqd;
+            rsqd3 = rsqdinv * rsqdinv * rsqdinv;
+
+            f = 24 * (rsqd3 * rsqdinv) * (2 * (rsqd3)-1);
+
+            //rsqd4= rSqd*rSqd*rSqd*rSqd;
+            //rsqd7= rsqd4*rsqd4*1/rSqd;
             //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
-            f = 24 * (2/ rsqd7 - 1/ rsqd4);
+            //f = 48/ rsqd7 - 24/ rsqd4;
             //f = 24 * (2 * pow(rSqd, -7) - pow(rSqd, -4));
-            for (k = 0; k < 3; k++) {
                 //  from F = ma, where m = 1 in natural units!
-                a[i][k] += rij[k] * f;
-                a[j][k] -= rij[k] * f;
-            }
+            a[i][0] = rij[0] * f;
+            a[i][1] = rij[2] * f;
+            a[i][2] = rij[1] * f;
+            a[j][0] = rij[0] * f;
+            a[j][1] = rij[1] * f;
+            a[j][2] = rij[2] * f;
         }
     }
-}
 
 // returns sum of dv/dt*m/A (aka Pressure) from elastic collisions with walls
 double VelocityVerlet(double dt, int iter, FILE *fp) {
