@@ -1,6 +1,7 @@
 CC = gcc
 SRC = src/
-CFLAGS = -O3 -ftree-vectorize -msse4 -fno-omit-frame-pointer -pg
+CFLAGS = -O3 -ftree-vectorize -fno-omit-frame-pointer -ffast-math -mavx -march=native 
+#-O3 -ftree-vectorize -msse4 -fno-omit-frame-pointer -pg
 
 .DEFAULT_GOAL = MD.exe
 

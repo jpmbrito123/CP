@@ -454,18 +454,14 @@ double Kinetic() { //Write Function here!
 
 
 // Function to calculate the potential energy of the system
-//EDITED (fors editados e a forma como o r2 e 
-//calulado tambem, adicionado variavel auxiliar)
 double Potential() {
     double quot, r2, term1, term2, Pot, subs1, subs2, subs3;
-    int i, j, k;
-    double fourxepsilon = 4. * epsilon;
+    int i, j;
+    double eightEpsilon = 8. * epsilon;
     Pot = 0.;
     for (i = 0; i < N; i++) {
-        for (j = 0; j < N; j++) {
-            if (j != i) {
+        for (j = i+1; j < N; j++) {
                 r2 = 0.;
-                //r2 = ((r[i][0] - r[j][0]) * (r[i][0] - r[j][0]) + (r[i][1] - r[j][1]) * (r[i][1] - r[j][1]) + (r[i][2] - r[j][2]) * (r[i][2] - r[j][2]));
                 subs1 = r[i*size] - r[j*size];
                 subs2 = r[i*size+1] - r[j*size+1];
                 subs3 = r[i*size+2] - r[j*size+2];
@@ -474,15 +470,12 @@ double Potential() {
                 term2 = quot * quot * quot;
                 term1 = term2 * term2;
 
-                Pot += fourxepsilon * (term1 - term2);
-            }
+                Pot += (term1 - term2);
         }
     }
 
-
-    return Pot;
+    return Pot*eightEpsilon;
 }
-
 
 
 //   Uses the derivative of the Lennard-Jones potential to calculate
