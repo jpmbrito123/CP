@@ -37,6 +37,7 @@ double sigma = 1.;
 double epsilon = 1.;
 double m = 1.;
 double kB = 1.;
+double PEE=0.;
 
 double NA = 6.022140857e23;
 double kBSI = 1.38064852e-23;  // m^2*kg/(s^2*K)
@@ -76,7 +77,7 @@ double gaussdist();
 //  Initialize velocities according to user-supplied initial Temperature (Tinit)
 void initializeVelocities();
 //  Compute total potential energy from particle coordinates
-double Potential();
+
 //  Compute mean squared velocity from particle velocities
 double MeanSquaredVelocity();
 //  Compute total kinetic energy from particle mass and velocities
@@ -312,7 +313,7 @@ int main()
         //  We would also like to use the IGL to try to see if we can extract the gas constant
         mvs = MeanSquaredVelocity();
         KE = Kinetic();
-        PE = Potential();
+        PE = PEE;
         
         // Temperature from Kinetic Theory
         Temp = m*mvs/(3*kB) * TempFac;
@@ -453,7 +454,7 @@ double Kinetic() { //Write Function here!
 }
 
 
-// Function to calculate the potential energy of the system
+/*Function to calculate the potential energy of the system
 double Potential() {
     double quot, r2, term1, term2, Pot, subs1, subs2, subs3;
     int i, j;
@@ -476,7 +477,7 @@ double Potential() {
 
     return Pot*eightEpsilon;
 }
-
+*/
 
 //   Uses the derivative of the Lennard-Jones potential to calculate
 //   the forces on each atom.  Then uses a = F/m to calculate the
@@ -486,11 +487,12 @@ double Potential() {
 //   accelleration of each atom. 
 void computeAccelerations() {
     int i, j, k;
-    double f, rSqd, prim, seg, terc;
+    double f, rSqd, prim, seg, terc, quot, term1,term2,Pot;
     double rij[3]; // position of i relative to j
     //double rsqd4,rsqd7;
     double rsqdinv, rsqd3;
-
+    Pot= 0.;
+    double eightEpsilon = 8. * epsilon;
     for (i = 0; i < N; i++) {  // set all accelerations to zero
         a[i*size] = 0;
         a[i*size+1] = 0;
@@ -509,6 +511,11 @@ void computeAccelerations() {
             rij[2] = r[i*size+2] - r[j*size+2];
             //  sum of squares of the components
             rSqd = rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
+            quot = sigma / rSqd;
+            term2 = quot * quot * quot;
+            term1 = term2 * term2;
+
+            Pot += (term1 - term2);
 
             rsqdinv = 1 / rSqd;
             rsqd3 = rsqdinv * rsqdinv * rsqdinv;
@@ -530,6 +537,7 @@ void computeAccelerations() {
         a[i*size+1] += seg;
         a[i*size+2] += terc;
     }
+    PEE = Pot*eightEpsilon;
 }
 
 // returns sum of dv/dt*m/A (aka Pressure) from elastic collisions with walls
