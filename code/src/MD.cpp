@@ -486,7 +486,7 @@ double Potential() {
 //   the forces on each atom.  Then uses a = F/m to calculate the
 //   accelleration of each atom. 
 void computeAccelerations() {
-    int i, j, k;
+    int i, j;
     double f, rSqd, prim, seg, terc, quot, term1,term2,Pot;
     double rij[3]; // position of i relative to j
     //double rsqd4,rsqd7;
