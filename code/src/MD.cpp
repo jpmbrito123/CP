@@ -486,7 +486,7 @@ double Potential() {
 //   accelleration of each atom. 
 void computeAccelerations() {
     int i, j, k;
-    double f, rSqd;
+    double f, rSqd, prim, seg, terc;
     double rij[3]; // position of i relative to j
     //double rsqd4,rsqd7;
     double rsqdinv, rsqd3;
@@ -496,7 +496,8 @@ void computeAccelerations() {
         a[i*size+1] = 0;
         a[i*size+2] = 0;
     }
-    for (i = 0; i < N - 1; i++) {   // loop over all distinct pairs i,j
+    for (i = 0; i < N - 1; i++) {  // loop over all distinct pairs i,j
+    	prim=seg=terc=0.;
         for (j = i + 1; j < N; j++) {
             // initialize r^2 to zero
             rSqd = 0;
@@ -515,9 +516,9 @@ void computeAccelerations() {
             f = 24 * (rsqd3 * rsqdinv) * (2 * (rsqd3)-1);
 
             
-            a[i*size] += rij[0] * f;
-            a[i*size+1] += rij[1] * f;
-            a[i*size+2] += rij[2] * f;
+            prim += rij[0] * f;
+            seg += rij[1] * f;
+            terc += rij[2] * f;
             a[j*size] -= rij[0] * f;
             a[j*size+1] -= rij[1] * f;
             a[j*size+2] -= rij[2] * f;
@@ -525,6 +526,9 @@ void computeAccelerations() {
             
             
         }
+        a[i*size] += prim; 
+        a[i*size+1] += seg;
+        a[i*size+2] += terc;
     }
 }
 
