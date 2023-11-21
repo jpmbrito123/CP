@@ -475,8 +475,7 @@ void computeAccelerations() {
     Pot= 0.;
     double eightEpsilon = 8. * epsilon;
     double rsqdinv;
-    
-    # pragma omp for
+
     
     for (i = 0; i < N; i++) {  // set all accelerations to zero
         a[i][0] = 0;
@@ -484,10 +483,11 @@ void computeAccelerations() {
         a[i][2] = 0;
     }
 
-    #pragma omp parallel num_threads(8)
-    #pragma omp for reduction(+:Pot)
+    
     for (i = 0; i < N - 1; i++) {  // loop over all distinct pairs i,j
         prim=seg=terc=0.;
+    #pragma omp parallel num_threads(8)
+    #pragma omp for reduction(+:Pot)
         for (j = i + 1; j < N; j++) {
             // initialize r^2 to zero
             rSqd = 0;
