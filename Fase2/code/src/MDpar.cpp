@@ -423,7 +423,7 @@ double MeanSquaredVelocity() {
 
     
     for (int i=0; i<N; i++) {
-    	
+        
         vx2 = vx2 + v[i][0]*v[i][0];
         vy2 = vy2 + v[i][1]*v[i][1];
         vz2 = vz2 + v[i][2]*v[i][2];
@@ -466,28 +466,35 @@ double Kinetic() { //Write Function here!
 
 void computeAccelerations() {
     int i, j;
-    double f, rSqd, prim, seg, terc, quot,term2,Pot;
+    double f, rSqd, prim, seg, terc, quot, term2;
     double rij[3]; // position of i relative to j
     double rij0_f, rij1_f, rij2_f;
-    
-    //double rsqd4,rsqd7;
-    double rsqd3;
-    Pot= 0.;
-    double eightEpsilon = 8. * epsilon;
-    double rsqdinv;
 
+  
+    double Pot = 0.;
+    double eightEpsilon = 8. * epsilon;
+
+
+//#pragma omp parallel for{
     
+
+
+    //#pragma omp for
     for (i = 0; i < N; i++) {  // set all accelerations to zero
         a[i][0] = 0;
         a[i][1] = 0;
         a[i][2] = 0;
     }
 
-    
+    // #pragma omp parallel num_threads(8) 
+  
+
+#pragma omp parallel for reduction(+:Pot,a[:MAXPART][:3]) private(sigma,j, rSqd, rij, quot, term2, f, rij0_f, rij1_f, rij2_f,prim,seg,terc)
+
+
     for (i = 0; i < N - 1; i++) {  // loop over all distinct pairs i,j
-        prim=seg=terc=0.;
-    #pragma omp parallel num_threads(8)
-    #pragma omp for reduction(+:Pot)
+        prim = seg = terc = 0.;
+        
         for (j = i + 1; j < N; j++) {
             // initialize r^2 to zero
             rSqd = 0;
@@ -498,20 +505,21 @@ void computeAccelerations() {
             rij[1] = r[i][1] - r[j][1];
             rij[2] = r[i][2] - r[j][2];
             //  sum of squares of the components
-            
+
             rSqd = rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
             quot = rSqd * rSqd * rSqd;
             term2 = sigma / quot;
 
+
             Pot += (term2 * term2 - term2);
 
 
-            f = 24 * (1/(quot*rSqd)) * (2 * (1/quot) -1);
+            f = 24 * (1 / (quot * rSqd)) * (2 * (1 / quot) - 1);
 
             rij0_f = rij[0] * f;
             rij1_f = rij[1] * f;
             rij2_f = rij[2] * f;
-            
+
 
             prim += rij0_f;
             seg += rij1_f;
@@ -519,15 +527,17 @@ void computeAccelerations() {
             a[j][0] -= rij0_f;
             a[j][1] -= rij1_f;
             a[j][2] -= rij2_f;
-            
-
 
         }
         a[i][0] += prim;
         a[i][1] += seg;
         a[i][2] += terc;
+
+ 
     }
-    PEE = Pot*eightEpsilon;
+ 
+    PEE = Pot * eightEpsilon;
+    
 }
 
 // returns sum of dv/dt*m/A (aka Pressure) from elastic collisions with walls
