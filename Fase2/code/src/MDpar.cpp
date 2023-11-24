@@ -285,6 +285,7 @@ int main()
     int tenp = floor(NumTime/10);
     fprintf(ofp,"  time (s)              T(t) (K)              P(t) (Pa)           Kinetic En. (n.u.)     Potential En. (n.u.) Total En. (n.u.)\n");
     printf("  PERCENTAGE OF CALCULATION COMPLETE:\n  [");
+    
     for (i=0; i<NumTime+1; i++) {
         
         //  This just prints updates on progress of the calculation for the users convenience
@@ -475,18 +476,16 @@ void computeAccelerations() {
     double eightEpsilon = 8. * epsilon;
 
 
-//#pragma omp parallel for{
+
     
 
 
-    //#pragma omp for
     for (i = 0; i < N; i++) {  // set all accelerations to zero
         a[i][0] = 0;
         a[i][1] = 0;
         a[i][2] = 0;
     }
 
-    // #pragma omp parallel num_threads(8) 
   
 
 #pragma omp parallel for reduction(+:Pot,a[:MAXPART][:3]) private(sigma,j, rSqd, rij, quot, term2, f, rij0_f, rij1_f, rij2_f,prim,seg,terc)
@@ -496,16 +495,15 @@ void computeAccelerations() {
         prim = seg = terc = 0.;
         
         for (j = i + 1; j < N; j++) {
-            // initialize r^2 to zero
+            
             rSqd = 0;
 
 
-            //  component-by-componenent position of i relative to j
+            
             rij[0] = r[i][0] - r[j][0];
             rij[1] = r[i][1] - r[j][1];
             rij[2] = r[i][2] - r[j][2];
-            //  sum of squares of the components
-
+            
             rSqd = rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
             quot = rSqd * rSqd * rSqd;
             term2 = sigma / quot;
