@@ -488,12 +488,13 @@ void computeAccelerations() {
 
   
 
-#pragma omp parallel for reduction(+:Pot,a[:MAXPART][:3]) private(sigma,j, rSqd, rij, quot, term2, f, rij0_f, rij1_f, rij2_f,prim,seg,terc)
+#pragma omp parallel for reduction(+:Pot,a[:MAXPART][:3]) private(j, term2, rSqd, rij, quot, f, rij0_f, rij1_f, rij2_f,prim,seg,terc)
 
 
     for (i = 0; i < N - 1; i++) {  // loop over all distinct pairs i,j
         prim = seg = terc = 0.;
         
+
         for (j = i + 1; j < N; j++) {
             
             rSqd = 0;
