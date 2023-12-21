@@ -465,79 +465,117 @@ double Kinetic() { //Write Function here!
 }
 
 
-void computeAccelerations() {
-    int i, j;
-    double f, rSqd, prim, seg, terc, quot, term2;
-    double rij[3]; // position of i relative to j
-    double rij0_f, rij1_f, rij2_f;
+#include <stdio.h>
 
-  
-    double Pot = 0.;
-    double eightEpsilon = 8. * epsilon;
+// Define constants
+#define N_MAX 1000 // Update with your maximum number of particles
+#define BLOCK_SIZE 256 // Choose an appropriate block size
 
+// Device function to compute accelerations
+__global__ 
+    void computeAccelerationsKernel(int N, double epsilon, double sigma,
+                                           double (*r)[3], double (*a)[3], double *PEE) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
 
+    if (i < N) {
+        double f, rSqd, prim, seg, terc, quot, term2;
+        double rij[3];
+        double rij0_f, rij1_f, rij2_f;
 
-    
+        double Pot = 0.;
+        double eightEpsilon = 8. * epsilon;
 
-
-    for (i = 0; i < N; i++) {  // set all accelerations to zero
+        // Set all accelerations to zero
         a[i][0] = 0;
         a[i][1] = 0;
         a[i][2] = 0;
-    }
 
-  
+        for (int j = 0; j < N; j++) {
+            if (i != j) {
+                rSqd = 0;
+                rij[0] = r[i][0] - r[j][0];
+                rij[1] = r[i][1] - r[j][1];
+                rij[2] = r[i][2] - r[j][2];
+                rSqd = rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
+                quot = rSqd * rSqd * rSqd;
+                term2 = sigma / quot;
 
-#pragma omp parallel for reduction(+:Pot,a[:MAXPART][:3]) private(j, term2, rSqd, rij, quot, f, rij0_f, rij1_f, rij2_f,prim,seg,terc) schedule(dynamic)
+                Pot += (term2 * term2 - term2);
 
+                f = 24 * (1 / (quot * rSqd)) * (2 * (1 / quot) - 1);
 
-    for (i = 0; i < N - 1; i++) {  // loop over all distinct pairs i,j
-        prim = seg = terc = 0.;
-        
+                rij0_f = rij[0] * f;
+                rij1_f = rij[1] * f;
+                rij2_f = rij[2] * f;
 
-        for (j = i + 1; j < N; j++) {
-            
-            rSqd = 0;
+                prim += rij0_f;
+                seg += rij1_f;
+                terc += rij2_f;
 
-
-            
-            rij[0] = r[i][0] - r[j][0];
-            rij[1] = r[i][1] - r[j][1];
-            rij[2] = r[i][2] - r[j][2];
-            
-            rSqd = rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
-            quot = rSqd * rSqd * rSqd;
-            term2 = sigma / quot;
-
-
-            Pot += (term2 * term2 - term2);
-
-
-            f = 24 * (1 / (quot * rSqd)) * (2 * (1 / quot) - 1);
-
-            rij0_f = rij[0] * f;
-            rij1_f = rij[1] * f;
-            rij2_f = rij[2] * f;
-
-
-            prim += rij0_f;
-            seg += rij1_f;
-            terc += rij2_f;
-            a[j][0] -= rij0_f;
-            a[j][1] -= rij1_f;
-            a[j][2] -= rij2_f;
-
+                atomicAdd(&a[j][0], -rij0_f);
+                atomicAdd(&a[j][1], -rij1_f);
+                atomicAdd(&a[j][2], -rij2_f);
+            }
         }
-        a[i][0] += prim;
-        a[i][1] += seg;
-        a[i][2] += terc;
 
- 
+        atomicAdd(&a[i][0], prim);
+        atomicAdd(&a[i][1], seg);
+        atomicAdd(&a[i][2], terc);
+
+        atomicAdd(PEE, Pot * eightEpsilon);
     }
- 
-    PEE = Pot * eightEpsilon;
-    
 }
+
+// Host function to launch the kernel
+void computeAccelerationsCUDA(int N, double epsilon, double sigma,
+                               double (*r)[3], double (*a)[3], double *PEE) {
+    double (*d_r)[3], (*d_a)[3], *d_PEE;
+
+    // Allocate memory on the GPU
+    cudaMalloc((void**)&d_r, N * 3 * sizeof(double));
+    cudaMalloc((void**)&d_a, N * 3 * sizeof(double));
+    cudaMalloc((void**)&d_PEE, sizeof(double));
+
+    // Copy data from host to device
+    cudaMemcpy(d_r, r, N * 3 * sizeof(double), cudaMemcpyHostToDevice);
+
+    // Initialize the PEE on the device
+    cudaMemset(d_PEE, 0, sizeof(double));
+
+    // Launch the kernel
+    dim3 blocks((N + BLOCK_SIZE - 1) / BLOCK_SIZE, 1, 1);
+    dim3 threads(BLOCK_SIZE, 1, 1);
+    computeAccelerationsKernel<<<blocks, threads>>>(N, epsilon, sigma, d_r, d_a, d_PEE);
+
+    // Copy results back to the host
+    cudaMemcpy(a, d_a, N * 3 * sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(PEE, d_PEE, sizeof(double), cudaMemcpyDeviceToHost);
+
+    // Free allocated memory on the GPU
+    cudaFree(d_r);
+    cudaFree(d_a);
+    cudaFree(d_PEE);
+}
+
+/*int main() {
+    int N = 100; // Update with your desired number of particles
+    double epsilon = 1.0; // Update with your desired value
+    double sigma = 1.0; // Update with your desired value
+    double r[N][3]; // Update with your particle positions
+    double a[N][3];
+    double PEE;
+
+    // Initialize particle positions (r) and other parameters as needed
+
+    // Call the CUDA implementation of computeAccelerations
+    computeAccelerationsCUDA(N, epsilon, sigma, r, a, &PEE);
+
+    // Perform any further processing or analysis as needed
+
+    return 0;
+    }
+*/
+
 
 // returns sum of dv/dt*m/A (aka Pressure) from elastic collisions with walls
 double VelocityVerlet(double dt, int iter, FILE *fp) {
