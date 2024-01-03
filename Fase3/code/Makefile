@@ -1,22 +1,39 @@
-CC = gcc
-SRC = src/
-CFLAGS = -O3 -ftree-vectorize -fno-omit-frame-pointer -ffast-math -mavx -march=native# select optimization flags (e.g., O2 or O3)
+SHELL = /bin/bash
+BIN_NAME = MDpar
+
+CXX = nvcc
+LD  = nvcc
+
+CXXFLAGS   = -O2 -g -std=c++11 -arch=sm_35 -Wno-deprecated-gpu-targets
+
+SRC_DIR = src
+BIN_DIR = bin
+BUILD_DIR = build
+SRC = $(wildcard $(SRC_DIR)/*.cu)
+OBJ = $(patsubst $(SRC_DIR)/%.cu,$(BUILD_DIR)/%.o,$(SRC))
+BIN = $(BIN_DIR)/$(BIN_NAME)
+
+vpath %.cu $(SRC_DIR)
 
 .DEFAULT_GOAL = all
 
-all: MDseq.exe MDpar.exe
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cu
+	module load cuda/11.3.1;\
+	$(CXX) -c $(CXXFLAGS) $(INCLUDES) $< -o $@ $(LIBS)
 
-MDseq.exe: $(SRC)/MDseq.cpp
-	module load gcc/11.2.0;\
-	$(CC) $(CFLAGS) $(SRC)MDseq.cpp -lm -o MDseq.exe
-MDpar.exe: $(SRC)/MDpar.cpp
-	module load gcc/11.2.0;\
-	$(CC) $(CFLAGS) $(SRC)MDpar.cpp -lm -fopenmp -o MDpar.exe
+$(BIN): $(OBJ)
+	module load cuda/11.3.1;\
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(OBJ) $(LIBS)
+
+checkdirs:
+	@mkdir -p $(BUILD_DIR)
+	@mkdir -p $(BIN_DIR)
+
+all: checkdirs $(BIN)
 
 clean:
-	rm ./MD*.exe
+	rm -f $(BUILD_DIR)/* $(BIN_DIR)/*
 
-runseq: MDseq.exe
-	./MDseq.exe < inputdata.txt
-runpar: MDpar.exe
-	./MDpar.exe < inputdata.txt
+run: $(BIN)
+	module load cuda/11.3.1;\
+	sbatch test.sh

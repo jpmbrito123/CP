@@ -30,10 +30,14 @@
 #include <omp.h>
 #include <immintrin.h>
 #include <cuda.h>
+#include <stdio.h>
+#include <cstdlib>
+#include <iostream>
 
 // Number of particles
-int N, NUM_THREADS_PER_BLOCK, BLOCKS;
-
+int N, NUM_THREADS_PER_BLOCK=500, BLOCKS=10;
+double *arrayRGPU, *arrayVGPU, *arrayAGPU, *arrayPotGPU, *matrizesAccGPU, *arrayPSUMGPU;
+double *PSUMGPU, *POTGPU, *v2GPU, *kinGPU;
 
 //  Lennard-Jones parameters in natural units!
 double sigma = 1.;
@@ -44,6 +48,7 @@ double kB = 1.;
 
 double NA = 6.022140857e23;
 double kBSI = 1.38064852e-23;  // m^2*kg/(s^2*K)
+
 
 //  Size of box, which will be specified in natural units
 double L;
@@ -72,8 +77,7 @@ void initialize();
 //  return 'instantaneous pressure'
 double VelocityVerlet(double dt, int iter, FILE *fp);  
 //  Compute Force using F = -dV/dr
-//  solve F = ma for use in Velocity Verlet
-void computeAccelerations();
+//  solve F = ma for use in Velocity Verlet~
 //  Numerical Recipes function for generation gaussian distribution
 double gaussdist();
 //  Initialize velocities according to user-supplied initial Temperature (Tinit)
@@ -84,6 +88,17 @@ void initializeVelocities();
 double MeanSquaredVelocity();
 //  Compute total kinetic energy from particle mass and velocities
 double Kinetic();
+
+
+
+
+void checkCUDAError (const char *msg);
+
+void prepareKernels();
+void launchComputeAccelerationsKernels();
+double launchVelocityVerletKernels(double dt, int iter, FILE *fp);
+double launchMeanSquaredVelocityKernel();
+double launchKineticKernel();
 
 
 int main()
@@ -192,6 +207,7 @@ int main()
         strcpy(atype,"Ar");
         
     }
+    
     printf("\n  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     printf("\n                     YOU ARE SIMULATING %s GAS! \n",atype);
     printf("\n  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
@@ -200,27 +216,38 @@ int main()
     printf("\n  YOU WILL NOW ENTER A FEW SIMULATION PARAMETERS\n");
     printf("  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     printf("\n\n  ENTER THE INTIAL TEMPERATURE OF YOUR GAS IN KELVIN\n");
+
     scanf("%lf",&Tinit);
+    
     // Make sure temperature is a positive number!
     if (Tinit<0.) {
         printf("\n  !!!!! ABSOLUTE TEMPERATURE MUST BE A POSITIVE NUMBER!  PLEASE TRY AGAIN WITH A POSITIVE TEMPERATURE!!!\n");
         exit(0);
     }
+   
+
     // Convert initial temperature from kelvin to natural units
     Tinit /= TempFac;
+ 
     
     
     printf("\n\n  ENTER THE NUMBER DENSITY IN moles/m^3\n");
     printf("  FOR REFERENCE, NUMBER DENSITY OF AN IDEAL GAS AT STP IS ABOUT 40 moles/m^3\n");
     printf("  NUMBER DENSITY OF LIQUID ARGON AT 1 ATM AND 87 K IS ABOUT 35000 moles/m^3\n");
-    
+
     scanf("%lf",&rho);
     
+    
     N = 5000;//10*216
+
+   
     Vol = N/(rho*NA);
+    
+
     
     Vol /= VolFac;
     
+
     //  Limiting N to MAXPART for practical reasons
     if (N>=MAXPART) {
         
@@ -228,6 +255,8 @@ int main()
         exit(0);
         
     }
+    
+  
     //  Check to see if the volume makes sense - is it too small?
     //  Remember VDW radius of the particles is 1 natural unit of length
     //  and volume = L*L*L, so if V = N*L*L*L = N, then all the particles
@@ -240,16 +269,21 @@ int main()
         printf("  PLEASE ADJUST YOUR INPUT FILE ACCORDINGLY AND RETRY\n\n");
         exit(0);
     }
+    
+
     // Vol = L*L*L;
     // Length of the box in natural units:
     L = pow(Vol,(1./3));
-    
+
     //  Files that we can write different quantities to
     tfp = fopen(tfn,"w");     //  The MD trajectory, coordinates of every particle at each timestep
+    
     ofp = fopen(ofn,"w");     //  Output of other quantities (T, P, gc, etc) at every timestep
+    
     afp = fopen(afn,"w");    //  Average T, P, gc, etc from the simulation
     
     int NumTime;
+  
     if (strcmp(atype,"He")==0) {
         
         // dt in natural units of time s.t. in SI it is 5 f.s. for all other gasses
@@ -264,16 +298,18 @@ int main()
         NumTime=200;
         
     }
+   
     
     //  Put all the atoms in simple crystal lattice and give them random velocities
     //  that corresponds to the initial temperature we have specified
     initialize();
+    prepareKernels();
     
     //  Based on their positions, calculate the ininial intermolecular forces
     //  The accellerations of each particle will be defined from the forces and their
     //  mass, and this will allow us to update their positions via Newton's law
-    computeAccelerations();
     
+    launchComputeAccelerationsKernels();
     
     // Print number of particles to the trajectory file
     fprintf(tfp,"%i\n",N);
@@ -307,6 +343,10 @@ int main()
         // This updates the positions and velocities using Newton's Laws
         // Also computes the Pressure as the sum of momentum changes from wall collisions / timestep
         // which is a Kinetic Theory of gasses concept of Pressure
+
+        //Press = VelocityVerlet(dt, i+1, tfp);
+        //Press = launchVelocityVerletKernels(dt, i+1, tfp);
+
         Press = VelocityVerlet(dt, i+1, tfp);
         Press *= PressFac;
         
@@ -315,8 +355,15 @@ int main()
         //  Instantaneous mean velocity squared, Temperature, Pressure
         //  Potential, and Kinetic Energy
         //  We would also like to use the IGL to try to see if we can extract the gas constant
+
         mvs = MeanSquaredVelocity();
+        //mvs = launchMeanSquaredVelocityKernel();
+
+        //mvs = MeanSquaredVelocity();
+
         KE = Kinetic();
+        //KE = launchKineticKernel();
+        //KE = Kinetic();
         PE = PEE;
         
         // Temperature from Kinetic Theory
@@ -336,6 +383,18 @@ int main()
         
     }
     
+    // Free Allocated GPU Memory
+    cudaFree(arrayAGPU);
+    cudaFree(arrayRGPU);
+    cudaFree(arrayPotGPU);
+    cudaFree(matrizesAccGPU);
+    cudaFree(POTGPU);
+    //cudaFree(arrayVGPU);
+    //cudaFree(arrayPSUMGPU);
+    //cudaFree(PSUMGPU);
+    //cudaFree(v2GPU);
+    //cudaFree(kinGPU);
+
     // Because we have calculated the instantaneous temperature and pressure,
     // we can take the average over the whole simulation here
     Pavg /= NumTime;
@@ -368,134 +427,222 @@ int main()
 }
 
 
-void initialize() {
-    int n, p, i, j, k;
-    double pos;
-    
-    // Number of atoms in each direction
-    n = int(ceil(pow(N, 1.0/3)));
-    
-    //  spacing between atoms along a given direction
-    pos = L / n;
-    
-    //  index for number of particles assigned positions
-    p = 0;
-    //  initialize positions
-      for (i=0; i<n; i++) {
-        for (j=0; j<n; j++) {
-            for (k=0; k<n; k++) {
-                if (p<N) {
-                    
-                    r[p][0] = (i + 0.5)*pos;
-                    r[p][1] = (j + 0.5)*pos;
-                    r[p][2] = (k + 0.5)*pos;
-                }
-                p++;
-            }
-        }
-    }
-   
-    // Call function to initialize velocities
-    initializeVelocities();
-    
-    /***********************************************
-     *   Uncomment if you want to see what the initial positions and velocities are
-     printf("  Printing initial positions!\n");
-     for (i=0; i<N; i++) {
-     printf("  %6.3e  %6.3e  %6.3e\n",r[i][0],r[i][1],r[i][2]);
-     }
-     
-     printf("  Printing initial velocities!\n");
-     for (i=0; i<N; i++) {
-     printf("  %6.3e  %6.3e  %6.3e\n",v[i][0],v[i][1],v[i][2]);
-     }
-     */
-    
-    
-    
-}   
+void prepareKernels(){
+    cudaMalloc(&arrayRGPU, N * 3 * sizeof(double));
+    cudaMalloc(&arrayAGPU, N * 3 * sizeof(double));
+    cudaMalloc(&POTGPU, sizeof(double));
+    cudaMalloc(&arrayPotGPU, (N-1) * sizeof(double));
+    cudaMalloc(&matrizesAccGPU, (N-1) * N * 3 * sizeof(double));
+    //cudaMalloc(&arrayVGPU, N * 3 * sizeof(double));
+    //cudaMalloc(&arrayPSUMGPU, N * sizeof(double));
+    //cudaMalloc(&PSUMGPU, sizeof(double));
+    //cudaMalloc(&v2GPU, sizeof(double));
+    //cudaMalloc(&kinGPU, sizeof(double));
+    checkCUDAError("Memory Allocation Error!");
 
-
-//  Function to calculate the averaged velocity squared
-double MeanSquaredVelocity() { 
-    
-    double vx2 = 0;
-    double vy2 = 0;
-    double vz2 = 0;
-    double v2;
-
-    
-    for (int i=0; i<N; i++) {
-        
-        vx2 = vx2 + v[i][0]*v[i][0];
-        vy2 = vy2 + v[i][1]*v[i][1];
-        vz2 = vz2 + v[i][2]*v[i][2];
-        
-    }
-    v2 = (vx2+vy2+vz2)/N;
-    
-    
-    //printf("  Average of x-component of velocity squared is %f\n",v2);
-    return v2;
+    //cudaMemcpy(arrayRGPU, r, N * 3 * sizeof(double), cudaMemcpyHostToDevice);
+    //cudaMemcpy(arrayVGPU, v, N * 3 * sizeof(double), cudaMemcpyHostToDevice);
+    checkCUDAError("Memory Copy (Host -> Dev) Error!");
 }
 
-//  Function to calculate the kinetic energy of the system
-double Kinetic() { //Write Function here!  
-    
-    double v2, kin;
 
-    
-    kin =0.;
-    for (int i=0; i<N; i++) {
-        
-        v2 = 0.;
-        for (int j=0; j<3; j++) {
-            
-            v2 += v[i][j]*v[i][j];
-            
-        }
-        //ORIGINAL
-        // kin += m*v2/2.;
-        //EDITED
-        kin += m*v2/2;
-        
-    }
-    
-    //printf("  Total Kinetic Energy is %f\n",N*mvs*m/2.);
-    return kin;
-    
+
+void checkCUDAError (const char *msg) {
+	cudaError_t err = cudaGetLastError();
+	if( cudaSuccess != err) {
+        printf(msg);
+        printf(", ");
+        printf(cudaGetErrorString(err));
+		exit(-1);
+	}
 }
+
+
+/* THIS PART IS THE COMPUTEACCELERATIONS KERNEL USING ATOMICADD (FOR SOME REASON THIS SHIT DOESN'T WORK IT GETS STUCK)*/
+
+/*
+#if __CUDA_ARCH__ < 600
+__device__ double myAtomicAdd(double* address, double val){
+    unsigned long long int* address_as_ull =
+                              (unsigned long long int*)address;
+    unsigned long long int old = *address_as_ull, assumed;
+
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_ull, assumed,
+                        __double_as_longlong(val +
+                               __longlong_as_double(assumed)));
+
+    } while (assumed != old);
+
+    return __longlong_as_double(old);
+}
+#endif
 
 
 __global__
-     void computeAccelerationsKernel(int N, double epsilon, double sigma, double *rGPU, double *arrayMatrizesAGPU, double *POTGPU, int NUM_THREADS_PER_BLOCK, int BLOCKS) {
-        
-        int i, j;
-        double f, rSqd, prim = 0., seg = 0., terc = 0., quot, term2;
-        double rij[3]; // position of i relative to j
-        double rij0_f, rij1_f, rij2_f;
+void setAccelerationsKernel(int N, double * arrayAGPU, int NUM_THREADS_PER_BLOCK, int BLOCKS){
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    int total_threads = BLOCKS * NUM_THREADS_PER_BLOCK;
 
+    for(; id < N * 3; id += total_threads * 3){
+        arrayAGPU[id * 3] = 0;
+        arrayAGPU[id * 3 + 1] = 0;
+        arrayAGPU[id * 3 + 2] = 0;
+    }
+}
 
-        double Pot = 0.;
-        double eightEpsilon = 8. * epsilon;
-        
-        int id = blockIdx.x * blockDim.x + threadIdx.x;
-        POTGPU[id] = 0;
+__global__
+void computeAccelerationsKernel(int N, double sigma, double *arrayRGPU, double *arrayAGPU, double *POTGPU, int NUM_THREADS_PER_BLOCK, int BLOCKS) {
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    int total_threads = BLOCKS * NUM_THREADS_PER_BLOCK;
+    int j;
+    double f, rSqd, quot,term2;
+    double rij[3]; // position of i relative to j
+    double rij0_f, rij1_f, rij2_f;
 
-        for(i = 0; i < N ; i++){
-            arrayMatrizesAGPU[id][i][0] = 0;
-            arrayMatrizesAGPU[id][i][1] = 0;
-            arrayMatrizesAGPU[id][i][2] = 0;
-        }
-
-        
-        for (i = id+1; i < N-1 ; i++){
-            
+    for (; id < (N - 1) * 3; id += total_threads * 3) {
+        double prim= 0., seg= 0., terc=0.;
+        for (j = (id + 1) * 3; j < N * 3; j+=3) {
             rSqd = 0;
 
-            rij[0] = r[id][0] - r[i][0];
-            rij[1] = r[id][1] - r[i][1];
-            rij[2] = r[id][2] - r[i][2];
+
+            //  component-by-componenent position of i relative to j
+            rij[0] = arrayRGPU[id * 3] - arrayRGPU[j];
+            rij[1] = arrayRGPU[id * 3 + 1] - arrayRGPU[j + 1];
+            rij[2] = arrayRGPU[id * 3 + 2] - arrayRGPU[j + 2];
+            //  sum of squares of the components
+            
+            rSqd = rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
+            quot = rSqd * rSqd * rSqd;
+            term2 = sigma / quot;
+
+            //Pot += (term2 * term2 - term2);
+            myAtomicAdd(&POTGPU[0], (term2 * term2 - term2));
+
+            f = 24 * (1/(quot*rSqd)) * (2 * (1/quot) -1);
+
+            rij0_f = rij[0] * f;
+            rij1_f = rij[1] * f;
+            rij2_f = rij[2] * f;
+            
+
+            prim += rij0_f;
+            seg += rij1_f;
+            terc += rij2_f;
+
+            myAtomicAdd(&arrayAGPU[j], -rij0_f);
+            myAtomicAdd(&arrayAGPU[j + 1], -rij1_f);
+            myAtomicAdd(&arrayAGPU[j + 2], -rij2_f);
+
+            //a[j][0] -= rij0_f;
+            //a[j][1] -= rij1_f;
+            //a[j][2] -= rij2_f;
+            
+
+
+        }
+        myAtomicAdd(&arrayAGPU[id], prim);
+        myAtomicAdd(&arrayAGPU[id + 1], seg);
+        myAtomicAdd(&arrayAGPU[id + 2], terc);
+
+        //a[i][0] += prim;
+        //a[i][1] += seg;
+        //a[i][2] += terc;
+    }
+}
+
+
+
+void launchComputeAccelerationsKernels(){
+    double eightEpsilon = 8 * epsilon;
+    double *Pot;
+
+    //cudaMemcpy(arrayAGPU, a, N * 3 * sizeof(double), cudaMemcpyHostToDevice);
+    //checkCUDAError("Error copying a -> arrayAGPU");
+    cudaMemcpy(arrayRGPU, r, N * 3 * sizeof(double), cudaMemcpyHostToDevice);
+    checkCUDAError("Error copying r -> arrayRGPU");
+    cudaMemset(POTGPU, 0, sizeof(double));
+    checkCUDAError("Error copying Pot -> POTGPU");
+
+
+    setAccelerationsKernel<<< BLOCKS, NUM_THREADS_PER_BLOCK >>>(N, arrayAGPU, NUM_THREADS_PER_BLOCK, BLOCKS);
+    computeAccelerationsKernel<<< BLOCKS, NUM_THREADS_PER_BLOCK >>>(N, sigma, arrayRGPU, arrayAGPU, POTGPU, NUM_THREADS_PER_BLOCK, BLOCKS);
+    checkCUDAError("Error launching kernel computeAccelerations");
+    
+    cudaMemcpy(Pot, POTGPU, sizeof(double), cudaMemcpyDeviceToHost);
+    checkCUDAError("Error copying POTGPU -> Pot");
+    cudaMemcpy(a, arrayAGPU, N * 3 * sizeof(double), cudaMemcpyDeviceToHost);
+    checkCUDAError("Error copying arrayAGPU -> a");
+    PEE = Pot[0] * eightEpsilon;
+}*/
+
+
+
+__global__
+void computeAccelerationsReduceKernel(int N, double *arrayMatrizesAGPU, double *arrayAGPU, int NUM_THREADS_PER_BLOCK, int BLOCKS ) {
+    int total_threads = NUM_THREADS_PER_BLOCK * BLOCKS;
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if(id >= N){
+        return;
+    }
+
+    for(; id < N; id+= total_threads){
+        arrayAGPU[id*3] = 0;
+        arrayAGPU[id*3 + 1] = 0;
+        arrayAGPU[id*3 + 2] = 0;
+
+
+        for(int i=0; i <= id; i++){
+            if(i == N-1) break;
+            int index = i * N * 3;
+
+            arrayAGPU[id*3] += arrayMatrizesAGPU[index + (3 * id)];
+            arrayAGPU[id*3 + 1] += arrayMatrizesAGPU[index + (3 * id) + 1];
+            arrayAGPU[id*3 + 2] += arrayMatrizesAGPU[index + (3 * id) + 2];
+        }
+    }
+}
+
+
+
+__global__
+void computeAccelerationsMapKernel(int N, double sigma, double *rGPU, double *arrayMatrizesAGPU, double *POTGPU, int NUM_THREADS_PER_BLOCK, int BLOCKS) {
+    int i;
+    int total_threads = NUM_THREADS_PER_BLOCK * BLOCKS;
+    double f, rSqd, quot, term2;
+    double rij[3];
+    double rij0_f, rij1_f, rij2_f;
+
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if(id >= N-1){
+        return;
+    }
+    
+
+    id = (N - 2) - id;
+    for(; id >= 0 ; id-= total_threads){
+        double prim = 0., seg = 0., terc = 0.;
+        int index = id * N * 3;
+
+        POTGPU[id] = 0;
+
+
+        for(i = 0; i < N * 3 ; i+=3){
+            int ind = index + i;
+            arrayMatrizesAGPU[ind] = 0;
+            arrayMatrizesAGPU[ind + 1] = 0;
+            arrayMatrizesAGPU[ind + 2] = 0;
+        }
+
+        for (i = (id*3)+3; i < N * 3 ; i+=3){ 
+            rSqd = 0;
+
+            rij[0] = rGPU[id * 3] - rGPU[i];
+            rij[1] = rGPU[id * 3 + 1] - rGPU[i + 1];
+            rij[2] = rGPU[id * 3 + 2] - rGPU[i + 2];
 
             rSqd = rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
             quot = rSqd * rSqd * rSqd;
@@ -515,82 +662,52 @@ __global__
             prim += rij0_f;
             seg += rij1_f;
             terc += rij2_f;
-            arrayMatrizesAGPU[id][i][0] -= rij0_f;
-            arrayMatrizesAGPU[id][i][1] -= rij1_f;
-            arrayMatrizesAGPU[id][i][2] -= rij2_f;
+
+            arrayMatrizesAGPU[index + i] -= rij0_f;
+            arrayMatrizesAGPU[index + i + 1] -= rij1_f;
+            arrayMatrizesAGPU[index + i + 2] -= rij2_f;
         }
 
-        arrayMatrizesAGPU[id][id][0] += prim;
-        arrayMatrizesAGPU[id][id][1] += seg;
-        arrayMatrizesAGPU[id][id][2] += terc;
-
-
-     }
-
-
-void launchComputeAccelerationsKernel() {
-    double eightEpsilon = 8 * epsilon;
-    double Pot = 0.;
-    double *rGPU, *aGPU, *POTGPU, POTCPU[N-1], *arrayMatrizesAGPU, arrayMatrizesACPU[N-1][N][3];
-
-    
-    // Allocate memory on the GPU
-    cudaMalloc(&rGPU, N * 3 * sizeof(double));
-    //cudaMalloc(&aGPU, N * 3 * sizeof(double));
-    cudaMalloc(&POTGPU, (N-1) * sizeof(double));
-    cudaMalloc(&arrayMatrizesA, (N-1) * N * 3 * sizeof(double));
-
-    fprintf("First element of array R: %f %f %f", r[0][0], r[0][1], r[0][2])
-
-
-    // Copy data from host to device
-    cudaMemcpy(rGPU, r, N * 3 * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(aGPU, a, N * 3 * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(POTGPU, POTCPU, (N-1) * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(arrayMatrizesAGPU, arrayMatrizesACPU, (N-1) * N * 3 * sizeof(double), cudaMemcpyHostToDevice);
-
-    fprintf("First element of array rGPU: %f %f %f", rGPU[0][0], rGPU[0][1], rGPU[0][2]);
-
-
-
-    // Launch the kernel
-    
-    computeAccelerationsKernel<<< BLOCKS, NUM_THREADS_PER_BLOCK >>>(N, epsilon, sigma, rGPU, arrayMatrizesAGPU, POTGPU, NUM_THREADS_PER_BLOCK, BLOCKS);
-
-
-    // Copy results back to the host
-    cudaMemcpy(arrayMatrizesACPU, arrayMatrizesAGPU, (N-1) * N * 3 * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(POTCPU,POTGPU, (N-1) * sizeof(double), cudaMemcpyDeviceToHost);
-
-
-    // Free allocated memory on the GPU
-    cudaFree(rGPU);
-    cudaFree(aGPU);
-    cudaFree(POTGPU);
-
-    for(int i = 0; i < N-1; i++){
-        Pot += POTCPU[i];
+        arrayMatrizesAGPU[index + (id * 3)] += prim;
+        arrayMatrizesAGPU[index + (id * 3) + 1] += seg;
+        arrayMatrizesAGPU[index + (id * 3) + 2] += terc;
     }
-
-    PEE = Pot * eightEpsilon;
-
-    fprint("PEE: %f", PEE);
-    /*
-    for(int i=0; i < N-1; i++){
-        for(int j = 0; j <= i; j++){
-            a[i][0] = arrayMatrizesACPU[j][i][0];
-            a[i][1] = arrayMatrizesACPU[j][i][1];
-            a[i][2] = arrayMatrizesACPU[j][i][2];
-        }
-    }*/
-
 }
 
 
 
+
+__global__
+void calculatePOT(int N, double *arrayPotGPU, double *POTGPU){
+    POTGPU[0] = 0.;
+    for(int i = 0; i < N - 1; i++) POTGPU[0] += arrayPotGPU[i];
+}
+
+
+
+void launchComputeAccelerationsKernels(){
+    cudaMemcpy(arrayRGPU, r, N * 3 * sizeof(double), cudaMemcpyHostToDevice);
+    checkCUDAError("Error copying arrayAGPU -> a");
+    double eightEpsilon = 8 * epsilon;
+    double Pot[1];
+
+    computeAccelerationsMapKernel<<< BLOCKS, NUM_THREADS_PER_BLOCK >>>(N, sigma, arrayRGPU, matrizesAccGPU, arrayPotGPU, NUM_THREADS_PER_BLOCK, BLOCKS);
+    checkCUDAError("Error launching kernel computeAccelerationsMap");
+    computeAccelerationsReduceKernel<<< BLOCKS, NUM_THREADS_PER_BLOCK >>>(N, matrizesAccGPU, arrayAGPU, NUM_THREADS_PER_BLOCK, BLOCKS);
+    checkCUDAError("Error launching kernel computeAccelerationsReduce");
+    calculatePOT<<<1, 1>>>(N, arrayPotGPU, POTGPU);
+    checkCUDAError("Error launching kernel calculatePOT");
+    cudaMemcpy(Pot, POTGPU, sizeof(double), cudaMemcpyDeviceToHost);
+    checkCUDAError("Error copying POTGPU -> Pot");
+    cudaMemcpy(a, arrayAGPU, N* 3* sizeof(double), cudaMemcpyDeviceToHost);
+    checkCUDAError("Error copying arrayAGPU -> a");
+    PEE = Pot[0] * eightEpsilon;
+}
+
+
 // returns sum of dv/dt*m/A (aka Pressure) from elastic collisions with walls
 double VelocityVerlet(double dt, int iter, FILE *fp) {
-    int i, j, k;
+    int i, j;
     
     double psum = 0.;
     
@@ -608,7 +725,7 @@ double VelocityVerlet(double dt, int iter, FILE *fp) {
         //printf("  %i  %6.4e   %6.4e   %6.4e\n",i,r[i][0],r[i][1],r[i][2]);
     }
     //  Update accellerations from updated positions
-    computeAccelerations();
+    launchComputeAccelerationsKernels();
     //  Update velocity with updated acceleration
     for (i=0; i<N; i++) {
         for (j=0; j<3; j++) {
@@ -643,6 +760,110 @@ double VelocityVerlet(double dt, int iter, FILE *fp) {
     
     return psum/(6*L*L);
 }
+
+
+
+//  Function to calculate the averaged velocity squared
+double MeanSquaredVelocity() { 
+    
+    double vx2 = 0;
+    double vy2 = 0;
+    double vz2 = 0;
+    double v2;
+
+    
+    for (int i=0; i<N; i++) {
+        
+        vx2 = vx2 + v[i][0]*v[i][0];
+        vy2 = vy2 + v[i][1]*v[i][1];
+        vz2 = vz2 + v[i][2]*v[i][2];
+        
+    }
+    v2 = (vx2+vy2+vz2)/N;
+    
+    
+    //printf("  Average of x-component of velocity squared is %f\n",v2);
+    return v2;
+}
+
+
+
+//  Function to calculate the kinetic energy of the system
+double Kinetic() { //Write Function here!  
+    
+    double v2, kin;
+
+    
+    kin =0.;
+    for (int i=0; i<N; i++) {
+        
+        v2 = 0.;
+        for (int j=0; j<3; j++) {
+            
+            v2 += v[i][j]*v[i][j];
+            
+        }
+        //ORIGINAL
+        // kin += m*v2/2.;
+        //EDITED
+        kin += m*v2/2;
+        
+    }
+    
+    //printf("  Total Kinetic Energy is %f\n",N*mvs*m/2.);
+    return kin;
+    
+}
+
+
+
+void initialize() {
+    int n, p, i, j, k;
+    double pos;
+    
+    // Number of atoms in each direction
+    n = int(ceil(pow(N, 1.0/3)));
+    
+    //  spacing between atoms along a given direction
+    pos = L / n;
+    
+    //  index for number of particles assigned positions
+    p = 0;
+    //  initialize positions
+      for (i=0; i<n; i++) {
+        for (j=0; j<n; j++) {
+            for (k=0; k<n; k++) {
+                if (p<N) {
+                    
+                    r[p][0] = (i + 0.5)*pos;
+                    r[p][1] = (j + 0.5)*pos;
+                    r[p][2] = (k + 0.5)*pos;
+                }
+                p++;
+            }
+        }
+    }
+   
+    // Call function to initialize velocities
+    initializeVelocities();
+    
+    /***********************************************
+     *   Uncomment if you want to see what the initial positions and velocities are
+
+     printf("  Printing initial positions!\n");
+     for (i=0; i<N; i++) {
+     printf("  %6.3e  %6.3e  %6.3e\n",r[i][0],r[i][1],r[i][2]);
+     }
+     printf("  Printing initial velocities!\n");
+     for (i=0; i<N; i++) {
+     printf("  %6.3e  %6.3e  %6.3e\n",v[i][0],v[i][1],v[i][2]);
+     }
+     */
+    
+    
+    
+}   
+
 
 
 void initializeVelocities() {
@@ -733,3 +954,145 @@ double gaussdist() {
         
     }
 }
+
+
+
+
+/* THIS KERNELS ARE USED FOR THE VELOCITYVERLET, MEANSQUAREDVELOCITIES AND KINETIC PARTS (COULD HAVE SOME MINOR ERRORS)*/
+
+/*
+__global__
+void velocityVerletFirstPart(double dt, double *arrayAGPU, double *arrayVGPU, double *arrayRGPU){
+    int id = blockIdx.x * blockDim.x + threadIdx.x * 3; 
+    
+    //  Compute accelerations from forces at current position
+    // this call was removed (commented) for predagogical reasons
+    //computeAccelerations();
+    //  Update positions and velocity with current velocity and acceleration
+    //printf("  Updated Positions!\n");
+    for (int j=0; j<3; j++) {
+
+        arrayRGPU[id + j] += arrayVGPU[id + j] * dt + 0.5*arrayAGPU[id + j] * dt * dt;
+        arrayVGPU[id + j] += 0.5*arrayAGPU[id + j] * dt;
+    }
+    //printf("  %i  %6.4e   %6.4e   %6.4e\n",i,r[i][0],r[i][1],r[i][2]);
+}
+
+
+
+__global__
+void velocityVerletSecondPart(double L, double dt, double m, double *arrayAGPU, double *arrayVGPU, double *arrayRGPU, double *arrayPSUMGPU){
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+
+    arrayPSUMGPU[id] = 0.;
+
+    //  Update velocity with updated acceleration
+    for (int j=0; j<3; j++) {
+        arrayVGPU[id * 3 + j] += 0.5*arrayAGPU[id * 3 + j]* dt;
+    }
+    
+    // Elastic walls
+    for (int j=0; j<3; j++) {
+
+        if (arrayRGPU[id * 3 + j]<0.) {
+            arrayVGPU[id * 3 + j] *=-1.; //- elastic walls
+            arrayPSUMGPU[id] += 2*m*fabs(arrayVGPU[id * 3 + j]) / dt;  // contribution to pressure from "left" walls
+        }
+
+        if (arrayRGPU[id * 3 + j]>=L) {
+            arrayVGPU[id * 3 + j]*=-1.;  //- elastic walls
+            arrayPSUMGPU[id] += 2*m*fabs(arrayVGPU[id * 3 + j])/dt;  // contribution to pressure from "right" walls
+        }
+    }
+}
+
+
+__global__
+void calculatePSUM(int N, double *arrayPSUMGPU, double *PSUMGPU){
+    PSUMGPU[0] = 0.;
+    for(int i = 0; i < N; i++) PSUMGPU[0] += arrayPSUMGPU[i];
+}
+
+
+
+double launchVelocityVerletKernels(double dt, int iter, FILE *fp){
+    BLOCKS = 10;
+    NUM_THREADS_PER_BLOCK = 500;
+
+    velocityVerletFirstPart<<< BLOCKS, NUM_THREADS_PER_BLOCK >>>(dt, arrayAGPU, arrayVGPU, arrayRGPU);
+    checkCUDAError("Error launching kernel velocityVerletFirstPart");
+    launchComputeAccelerationsKernels();
+    velocityVerletSecondPart<<< BLOCKS, NUM_THREADS_PER_BLOCK >>>(L, dt, m, arrayAGPU, arrayVGPU, arrayRGPU, arrayPSUMGPU);
+    checkCUDAError("Error launching kernel velocityVerletSecondPart");
+    calculatePSUM<<<1, 1>>>(N, arrayPSUMGPU, PSUMGPU);
+    checkCUDAError("Error launching kernel calculatePSUM");
+
+    double psum[1];
+    cudaMemcpy(psum, PSUMGPU, sizeof(double), cudaMemcpyDeviceToHost);
+    checkCUDAError("Error copying PSUMGPU -> psum");
+    cudaMemcpy(v, arrayVGPU, N * 3 * sizeof(double), cudaMemcpyDeviceToHost);
+    checkCUDAError("Error copying arrayVGPU -> v");
+
+    return psum[0];
+}
+
+
+__global__
+void meanSquaredVelocityKernel(int N, double *arrayVGPU, double *v2GPU){
+    double vx2 = 0;
+    double vy2 = 0;
+    double vz2 = 0;
+    
+    for (int i=0; i < N * 3; i+=3) {
+        
+        vx2 = vx2 + arrayVGPU[i]*arrayVGPU[i];
+        vy2 = vy2 + arrayVGPU[i + 1]*arrayVGPU[i + 1];
+        vz2 = vz2 + arrayVGPU[i + 2]*arrayVGPU[i + 2];
+        
+    }
+    v2GPU[0] = (vx2+vy2+vz2)/N;
+}
+
+
+double launchMeanSquaredVelocityKernel(){
+    meanSquaredVelocityKernel<<<1, 1>>>(N, arrayVGPU, v2GPU);
+    checkCUDAError("Error launching kernel meanSquaredVelocityKernel");
+    double v2[1];
+    cudaMemcpy(v2, v2GPU, sizeof(double), cudaMemcpyDeviceToHost);
+    checkCUDAError("Error copying v2GPU -> v2");
+    return v2[0];
+}
+
+
+
+__global__
+void kineticKernel(int N, double m, double *arrayVGPU, double *kinGPU){
+    double v2;
+
+    kinGPU[0] = 0.;
+    for (int i=0; i< N * 3; i+=3) {
+        
+        v2 = 0.;
+        for (int j=0; j<3; j++) {
+            
+            v2 += arrayVGPU[i + j]*arrayVGPU[i + j];
+            
+        }
+        //ORIGINAL
+        // kin += m*v2/2.;
+        //EDITED
+        kinGPU[0] += m*v2/2;
+        
+    }  
+    //printf("  Total Kinetic Energy is %f\n",N*mvs*m/2.);
+}
+
+
+double launchKineticKernel(){
+    kineticKernel<<<1, 1>>>(N, m, arrayVGPU, kinGPU);
+    checkCUDAError("Error launching kernel kineticKernel");
+    double kin[1];
+    cudaMemcpy(kin, kinGPU, sizeof(double), cudaMemcpyDeviceToHost);
+    checkCUDAError("Error copying kinGPU -> kin");
+    return kin[0];
+}*/
