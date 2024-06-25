@@ -16,5 +16,5 @@ Este repositório contém as soluções para as três fases dos trabalhos de com
 
 ## Fase 3: Paralelização Avançada
 
-- Escolher e implementar uma estratégia de paralelização avançada (OpenMP, CUDA ou MPI). (Optou-se por CUDA
+- Escolher e implementar uma estratégia de paralelização avançada (OpenMP, CUDA ou MPI). (Optou-se por CUDA)
 - Realizar testes de performance e análise de escalabilidade.
