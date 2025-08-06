@@ -1,4 +1,4 @@
-# CP - arallel Computing for Molecular Dynamics
+# CP - Parallel Computing for Molecular Dynamics
  
 This repository contains solutions for the three stages of the **Parallel Computing** course project (MEI: Computação Paralela) at the University of Minho. The project focuses on optimizing a molecular dynamics simulation of argon gas atoms for performance using parallel computing techniques.
 
