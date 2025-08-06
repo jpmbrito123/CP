@@ -26,6 +26,6 @@ The project is divided into three phases, gradually introducing performance opti
 
 ## Tools & Technologies
 
-- **Languages**: C, CUDA C
+- **Languages**: C, CUDA 
 - **Libraries**: OpenMP, CUDA Toolkit
 - **Tools**: `gprof`, `nvprof`, `perf`, `valgrind`, `make`
