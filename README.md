@@ -1,20 +1,31 @@
-# CP
+# CP - arallel Computing for Molecular Dynamics
  
-Este repositório contém as soluções para as três fases dos trabalhos de computação paralela do curso "MEI: Computação Paralela" na Universidade do Minho. O objetivo é otimizar um programa de simulação de dinâmica molecular de átomos de gás argon.
+This repository contains solutions for the three stages of the **Parallel Computing** course project (MEI: Computação Paralela) at the University of Minho. The project focuses on optimizing a molecular dynamics simulation of argon gas atoms for performance using parallel computing techniques.
 
-## Fase 1: Otimização Monothread
+## Overview
 
-- Analisar o código fornecido usando ferramentas de perfilação.
-- Identificar e implementar otimizações para reduzir o tempo de execução.
-- Manter a legibilidade do código e a consistência dos outputs.
+The project is divided into three phases, gradually introducing performance optimization, shared-memory parallelism with OpenMP and GPU acceleration with CUDA. The main objective is to reduce execution time while maintaining correct and consistent simulation results.
 
-## Fase 2: Paralelismo com OpenMP
+## Phase 1 – Monothread Optimization
 
-- Identificar os hotspots no código monothread.
-- Avaliar e implementar estratégias de paralelismo usando OpenMP.
-- Analisar a escalabilidade e otimizar o código paralelo.
+- Profiled the provided sequential code to identify bottlenecks.
+- Applied low-level optimizations to reduce computation time (e.g., loop unrolling, memory access improvements).
+- Ensured code readability and maintained output integrity.
 
-## Fase 3: Paralelização Avançada
+## Phase 2 – Shared-Memory Parallelism with OpenMP
 
-- Escolher e implementar uma estratégia de paralelização avançada (OpenMP, CUDA ou MPI). (Optou-se por CUDA)
-- Realizar testes de performance e análise de escalabilidade.
+- Analyzed hotspots in the optimized sequential version.
+- Applied OpenMP directives to parallelize compute-intensive sections.
+- Evaluated speed-up and scalability by running the simulation across multiple cores.
+
+## Phase 3 – GPU Acceleration with CUDA
+
+- Chose CUDA for advanced parallelization to leverage GPU computing power.
+- Adapted core simulation functions for execution on NVIDIA GPUs.
+- Performed performance benchmarking and scalability analysis between CPU and GPU versions.
+
+## Tools & Technologies
+
+- **Languages**: C, CUDA C
+- **Libraries**: OpenMP, CUDA Toolkit
+- **Tools**: `gprof`, `nvprof`, `perf`, `valgrind`, `make`
